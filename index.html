@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dish Library</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="/"><span>◆</span> Dish Library</a>
+  <div class="nav-links">
+    <a href="/">Menu</a>
+    <a href="/add-dish.html">Add Dish</a>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem">
+    <div>
+      <h1>The Menu</h1>
+      <p id="dish-count">Loading dishes…</p>
+    </div>
+    <a class="btn btn-primary" href="/add-dish.html">+ Add dish</a>
+  </div>
+
+  <div class="filter-bar" id="filter-bar">
+    <button class="filter-pill active" data-cat="">All</button>
+  </div>
+
+  <div class="dishes-grid" id="dishes-grid"></div>
+</main>
+
+<script src="/static/js/utils.js"></script>
+<script>
+  let allDishes = [];
+  let activeCategory = "";
+
+  function renderDishes(dishes) {
+    const grid = document.getElementById("dishes-grid");
+    if (!dishes.length) {
+      grid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1">
+          <div class="big">🍽</div>
+          <h3>Nothing here yet</h3>
+          <p>Start by adding your first dish to the library.</p>
+          <a class="btn btn-primary" href="/add-dish.html">Add a dish</a>
+        </div>`;
+      return;
+    }
+    grid.innerHTML = dishes.map((d, i) => `
+      <article class="dish-card" style="animation-delay:${i * 0.04}s">
+        <div class="dish-card-header">
+          <h3>${esc(d.name)}</h3>
+          <span class="category-badge">${esc(d.category)}</span>
+        </div>
+        <div class="dish-card-body">
+          ${d.description ? `<p>${esc(d.description)}</p>` : ""}
+          ${d.ingredients  ? `<p style="color:var(--ink3);font-size:.8rem">📋 ${esc(d.ingredients)}</p>` : ""}
+          <div class="dish-meta">
+            ${d.prep_time ? `<span>⏱ ${d.prep_time} min</span>` : ""}
+            <span>Added ${formatDate(d.created_at)}</span>
+          </div>
+        </div>
+        <div class="dish-card-footer">
+          <button class="btn btn-danger" onclick="deleteDish(${d.id}, this)">Delete</button>
+        </div>
+      </article>`).join("");
+  }
+
+  function buildFilters(dishes) {
+    const cats = [...new Set(dishes.map(d => d.category))].sort();
+    const bar = document.getElementById("filter-bar");
+    bar.innerHTML = `<button class="filter-pill active" data-cat="">All</button>` +
+      cats.map(c => `<button class="filter-pill" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+    bar.addEventListener("click", e => {
+      const btn = e.target.closest(".filter-pill");
+      if (!btn) return;
+      bar.querySelectorAll(".filter-pill").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeCategory = btn.dataset.cat;
+      const filtered = activeCategory ? allDishes.filter(d => d.category === activeCategory) : allDishes;
+      renderDishes(filtered);
+    });
+  }
+
+  async function load() {
+    try {
+      allDishes = await apiFetch("/dishes");
+      document.getElementById("dish-count").textContent =
+        `${allDishes.length} dish${allDishes.length !== 1 ? "es" : ""} in the library`;
+      buildFilters(allDishes);
+      renderDishes(allDishes);
+    } catch (e) {
+      document.getElementById("dish-count").textContent = "Could not load dishes — is the API running?";
+    }
+  }
+
+  async function deleteDish(id, btn) {
+    if (!confirm("Remove this dish?")) return;
+    try {
+      await apiFetch(`/dishes/${id}`, { method: "DELETE" });
+      allDishes = allDishes.filter(d => d.id !== id);
+      const filtered = activeCategory ? allDishes.filter(d => d.category === activeCategory) : allDishes;
+      document.getElementById("dish-count").textContent =
+        `${allDishes.length} dish${allDishes.length !== 1 ? "es" : ""} in the library`;
+      buildFilters(allDishes);
+      renderDishes(filtered);
+      showToast("Dish removed.");
+    } catch (e) {
+      showToast("Failed to delete dish.", "error");
+    }
+  }
+
+  function esc(s) {
+    return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" });
+  }
+
+  load();
+</script>
+</body>
+</html>
