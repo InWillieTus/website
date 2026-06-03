@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, abort
+from flask import Flask, jsonify, request, abort, send_from_directory
 from flask_cors import CORS
 import sqlite3
 import os
@@ -33,6 +33,14 @@ def init_db():
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def home():
+    return send_from_directory(".", "index.html")
+
+@app.route("/add-dish.html")
+def add_dish_page():
+    return send_from_directory(".", "add-dish.html")
 
 @app.route("/api/dishes", methods=["GET"])
 def list_dishes():
