@@ -12,6 +12,7 @@
   <a class="nav-brand" href="/"><span>◆</span> Dish Library</a>
   <div class="nav-links">
     <a href="/">Menu</a>
+    <a href="/queue.html">Queue</a>
     <a href="/add-dish.html">Add Dish</a>
   </div>
 </nav>
@@ -48,6 +49,21 @@
         </div>
       </div>
 
+      <!-- Image upload -->
+      <div class="form-row">
+        <label>Photo <span style="font-weight:300;text-transform:none;letter-spacing:0">(optional — jpg, png, webp, gif · max 8 MB)</span></label>
+        <div class="img-upload-area" id="upload-area">
+          <input type="file" id="image" name="image" accept="image/jpeg,image/png,image/webp,image/gif"
+                 style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%">
+          <div id="upload-placeholder">
+            <span class="upload-icon">📷</span>
+            <span>Click or drag an image here</span>
+          </div>
+          <img id="image-preview" src="" alt="Preview" style="display:none">
+          <button type="button" id="remove-image" class="remove-img-btn" style="display:none" aria-label="Remove image">✕</button>
+        </div>
+      </div>
+
       <div class="form-row">
         <label for="ingredients">Ingredients</label>
         <textarea id="ingredients" name="ingredients" placeholder="e.g. eggs, guanciale, pecorino, black pepper, pasta" rows="3"></textarea>
@@ -76,29 +92,67 @@
 
 <script src="/static/js/utils.js"></script>
 <script>
-  const form = document.getElementById("dish-form");
-  const submitBtn = document.getElementById("submit-btn");
-  const formError = document.getElementById("form-error");
+  const form       = document.getElementById("dish-form");
+  const submitBtn  = document.getElementById("submit-btn");
+  const formError  = document.getElementById("form-error");
+  const fileInput  = document.getElementById("image");
+  const preview    = document.getElementById("image-preview");
+  const placeholder = document.getElementById("upload-placeholder");
+  const removeBtn  = document.getElementById("remove-image");
+  const uploadArea = document.getElementById("upload-area");
 
+  // Image preview
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast("Image is too large (max 8 MB).", "error");
+      fileInput.value = "";
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+    preview.style.display = "block";
+    placeholder.style.display = "none";
+    removeBtn.style.display = "flex";
+  });
+
+  // Drag-over highlight
+  uploadArea.addEventListener("dragover",  e => { e.preventDefault(); uploadArea.classList.add("drag-over"); });
+  uploadArea.addEventListener("dragleave", ()  => uploadArea.classList.remove("drag-over"));
+  uploadArea.addEventListener("drop",      e  => { e.preventDefault(); uploadArea.classList.remove("drag-over"); });
+
+  // Remove image
+  removeBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    fileInput.value = "";
+    preview.src = "";
+    preview.style.display = "none";
+    placeholder.style.display = "flex";
+    removeBtn.style.display = "none";
+  });
+
+  // Submit — use FormData so the image is included
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     formError.textContent = "";
     submitBtn.disabled = true;
     submitBtn.textContent = "Saving…";
 
-    const data = {
-      name:        form.name.value.trim(),
-      category:    form.category.value,
-      ingredients: form.ingredients.value.trim(),
-      description: form.description.value.trim(),
-      prep_time:   form.prep_time.value ? parseInt(form.prep_time.value) : null,
-    };
+    const fd = new FormData();
+    fd.append("name",        form.name.value.trim());
+    fd.append("category",    form.category.value);
+    fd.append("ingredients", form.ingredients.value.trim());
+    fd.append("description", form.description.value.trim());
+    if (form.prep_time.value) fd.append("prep_time", form.prep_time.value);
+    if (fileInput.files[0])   fd.append("image", fileInput.files[0]);
 
     try {
-      await apiFetch("/dishes", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      const res = await fetch("/api/dishes", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
       showToast("Dish saved! 🎉");
       setTimeout(() => window.location.href = "/", 800);
     } catch (err) {

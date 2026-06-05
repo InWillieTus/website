@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Queued Dishes — Dish Library</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="/"><span>◆</span> Dish Library</a>
+  <div class="nav-links">
+    <a href="/">Menu</a>
+    <a href="/queue.html">Queue</a>
+    <a href="/add-dish.html">Add Dish</a>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem">
+    <div>
+      <h1>Queued Dishes</h1>
+      <p id="queue-count">Loading queue…</p>
+    </div>
+    <button class="btn btn-danger" id="clear-queue">Clear queue</button>
+  </div>
+
+  <div class="queue-list" id="queue-list"></div>
+  <!-- Dish details modal -->
+  <div id="dish-modal" class="dish-modal" role="dialog" aria-modal="true" aria-label="Dish details">
+    <div class="dish-modal-panel">
+      <button class="modal-close" id="dish-modal-close" aria-label="Close">✕</button>
+      <div id="dish-modal-content" class="dish-modal-content"></div>
+    </div>
+  </div>
+</main>
+
+<script src="/static/js/utils.js"></script>
+<script>
+  let queuedDishes = [];
+
+  function getQueueIds() {
+    try {
+      return JSON.parse(localStorage.getItem("dishQueue") || "[]");
+    } catch (e) {
+      console.error("Could not read dishQueue from localStorage:", e);
+      return [];
+    }
+  }
+
+  function saveQueueIds(ids) {
+    localStorage.setItem("dishQueue", JSON.stringify(ids));
+  }
+
+  function renderQueue() {
+    const list = document.getElementById("queue-list");
+    document.getElementById("queue-count").textContent =
+      `${queuedDishes.length} dish${queuedDishes.length !== 1 ? "es" : ""} queued`;
+
+    if (!queuedDishes.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="big">🧾</div>
+          <h3>Your queue is empty</h3>
+          <p>Add dishes from the menu page.</p>
+          <a class="btn btn-primary" href="/">Back to menu</a>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = queuedDishes.map((d, i) => `
+      <article class="queue-item" onclick="openDishDetails(${d.id})">
+        <div class="queue-rank">${i + 1}</div>
+        ${d.image_path
+          ? `<img class="queue-thumb" src="${esc(d.image_path)}" alt="${esc(d.name)}">`
+          : `<div class="queue-thumb queue-thumb-empty">🍽</div>`
+        }
+        <div class="queue-main">
+          <h3>${esc(d.name)}</h3>
+          <p>${esc(d.category)}${d.prep_time ? ` · ${d.prep_time} min` : ""}</p>
+          ${d.description ? `<p>${esc(d.description)}</p>` : ""}
+        </div>
+        <div class="queue-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-outline" onclick="moveDish(${i}, -1)" ${i === 0 ? "disabled" : ""}>↑</button>
+          <button class="btn btn-outline" onclick="moveDish(${i}, 1)" ${i === queuedDishes.length - 1 ? "disabled" : ""}>↓</button>
+          <button class="btn btn-danger" onclick="removeDish(${d.id})">Remove</button>
+        </div>
+      </article>`).join("");
+  }
+
+  async function loadQueue() {
+    const ids = getQueueIds();
+    const allDishes = await apiFetch("/dishes");
+    queuedDishes = ids
+      .map(id => allDishes.find(d => String(d.id) === String(id)))
+      .filter(Boolean);
+
+    saveQueueIds(queuedDishes.map(d => d.id));
+    renderQueue();
+  }
+
+  function removeDish(id) {
+    queuedDishes = queuedDishes.filter(d => d.id !== id);
+    saveQueueIds(queuedDishes.map(d => d.id));
+    renderQueue();
+    showToast("Removed from queue.");
+  }
+
+  function moveDish(index, direction) {
+    const next = index + direction;
+    if (next < 0 || next >= queuedDishes.length) return;
+    [queuedDishes[index], queuedDishes[next]] = [queuedDishes[next], queuedDishes[index]];
+    saveQueueIds(queuedDishes.map(d => d.id));
+    renderQueue();
+  }
+
+  function getCheckedIngredients(dishId) {
+    return JSON.parse(localStorage.getItem(`checkedIngredients:${dishId}`) || "[]");
+  }
+
+  function saveCheckedIngredients(dishId, ingredients) {
+    localStorage.setItem(`checkedIngredients:${dishId}`, JSON.stringify(ingredients));
+  }
+
+  function splitIngredients(ingredients) {
+    return String(ingredients || "")
+      .split(/,|\n/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+
+  function toggleIngredient(dishId, ingredient) {
+    const checked = getCheckedIngredients(dishId);
+    const next = checked.includes(ingredient)
+      ? checked.filter(item => item !== ingredient)
+      : [...checked, ingredient];
+    saveCheckedIngredients(dishId, next);
+  }
+
+  async function openDishDetails(id) {
+    try {
+      const dish = await apiFetch(`/dishes/${id}`);
+      const ingredients = splitIngredients(dish.ingredients);
+      const checkedIngredients = getCheckedIngredients(dish.id);
+      const content = document.getElementById("dish-modal-content");
+
+      content.innerHTML = `
+        ${dish.image_path ? `<img class="dish-modal-img" src="${esc(dish.image_path)}" alt="${esc(dish.name)}">` : ""}
+        <div class="dish-modal-header">
+          <div>
+            <h2>${esc(dish.name)}</h2>
+            <span class="category-badge">${esc(dish.category)}</span>
+          </div>
+        </div>
+
+        <div class="dish-detail-section">
+          <h4>Description</h4>
+          <p>${dish.description ? esc(dish.description) : "No description yet."}</p>
+        </div>
+
+        <div class="dish-detail-section">
+          <h4>Ingredients at home</h4>
+          ${ingredients.length
+            ? `<div class="ingredient-checklist">
+                ${ingredients.map((ingredient, index) => `
+                  <label class="ingredient-check" for="ingredient-${dish.id}-${index}">
+                    <input
+                      type="checkbox"
+                      id="ingredient-${dish.id}-${index}"
+                      ${checkedIngredients.includes(ingredient) ? "checked" : ""}
+                      onchange="toggleIngredient(${dish.id}, '${escAttr(ingredient)}')">
+                    <span>${esc(ingredient)}</span>
+                  </label>
+                `).join("")}
+              </div>`
+            : `<p>No ingredients listed.</p>`
+          }
+        </div>
+
+        <div class="dish-detail-grid">
+          ${dish.prep_time ? `<div><strong>Prep time</strong><span>${dish.prep_time} min</span></div>` : ""}
+          <div><strong>Added</strong><span>${formatDate(dish.created_at)}</span></div>
+        </div>
+      `;
+
+      document.getElementById("dish-modal").classList.add("open");
+      document.body.style.overflow = "hidden";
+    } catch (e) {
+      showToast("Could not load dish details.", "error");
+    }
+  }
+
+  function closeDishDetails() {
+    document.getElementById("dish-modal").classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  document.getElementById("clear-queue").addEventListener("click", () => {
+    if (!queuedDishes.length) return;
+    if (!confirm("Clear all queued dishes?")) return;
+    queuedDishes = [];
+    saveQueueIds([]);
+    renderQueue();
+    showToast("Queue cleared.");
+  });
+
+  document.getElementById("dish-modal-close").addEventListener("click", closeDishDetails);
+  document.getElementById("dish-modal").addEventListener("click", e => {
+    if (e.target === e.currentTarget) closeDishDetails();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") closeDishDetails();
+  });
+
+  function esc(s) {
+    return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function escAttr(s) {
+    return String(s ?? "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#39;");
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" });
+  }
+
+  loadQueue().catch((err) => {
+    console.error("Could not load queue:", err);
+    document.getElementById("queue-count").textContent = "Could not load queue — check the browser console.";
+  });
+</script>
+</body>
+</html>

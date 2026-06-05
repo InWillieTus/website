@@ -12,6 +12,7 @@
   <a class="nav-brand" href="/"><span>◆</span> Dish Library</a>
   <div class="nav-links">
     <a href="/">Menu</a>
+    <a href="/queue.html">Queue</a>
     <a href="/add-dish.html">Add Dish</a>
   </div>
 </nav>
@@ -24,19 +25,133 @@
     </div>
     <a class="btn btn-primary" href="/add-dish.html">+ Add dish</a>
   </div>
+  
 
-  <div class="filter-bar" id="filter-bar">
-    <button class="filter-pill active" data-cat="">All</button>
+  <!-- Filter + Sort controls -->
+  <div class="controls-row">
+    <div class="filter-bar" id="filter-bar">
+      <button class="filter-pill active" data-cat="">All</button>
+    </div>
+    <div class="sort-bar">
+      <label class="sort-label" for="sort-select">Sort</label>
+      <select class="sort-select" id="sort-select">
+        <option value="date-desc">Newest first</option>
+        <option value="date-asc">Oldest first</option>
+        <option value="name-asc">Name A → Z</option>
+        <option value="name-desc">Name Z → A</option>
+        <option value="prep-asc">Quickest first</option>
+      </select>
+    </div>
   </div>
 
   <div class="dishes-grid" id="dishes-grid"></div>
 </main>
 
+<!-- Dish details modal -->
+<div id="dish-modal" class="dish-modal" role="dialog" aria-modal="true" aria-label="Dish details">
+  <div class="dish-modal-panel">
+    <button class="modal-close" id="dish-modal-close" aria-label="Close">✕</button>
+    <div id="dish-modal-content" class="dish-modal-content"></div>
+  </div>
+</div>
+
+<!-- Edit dish modal -->
+<div id="edit-modal" class="dish-modal" role="dialog" aria-modal="true" aria-label="Edit dish">
+  <div class="dish-modal-panel" style="padding:2rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--warm)">
+      <h2 style="font-family:var(--serif);font-size:1.6rem">Edit Dish</h2>
+      <button class="modal-close" id="edit-modal-close" aria-label="Close" style="position:static;margin:0">✕</button>
+    </div>
+    <form id="edit-form" autocomplete="off">
+      <input type="hidden" id="edit-id">
+      <div class="form-cols">
+        <div class="form-row">
+          <label for="edit-name">Dish name *</label>
+          <input type="text" id="edit-name" placeholder="e.g. Pasta Carbonara" required maxlength="120">
+        </div>
+        <div class="form-row">
+          <label for="edit-category">Category *</label>
+          <select id="edit-category" required>
+            <option value="" disabled>Choose…</option>
+            <option>Starter</option><option>Main</option><option>Side</option>
+            <option>Dessert</option><option>Soup</option><option>Salad</option>
+            <option>Breakfast</option><option>Snack</option><option>Drink</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Image section -->
+      <div class="form-row">
+        <label>Photo <span style="font-weight:300;text-transform:none;letter-spacing:0">(optional)</span></label>
+        <div id="edit-current-img-wrap" style="display:none;margin-bottom:.75rem;position:relative;width:fit-content">
+          <img id="edit-current-img" src="" alt="" style="height:100px;border-radius:6px;object-fit:cover;display:block">
+          <button type="button" id="edit-remove-current-img" class="remove-img-btn" style="display:flex" title="Remove image">✕</button>
+          <input type="hidden" id="edit-remove-image-flag" value="0">
+        </div>
+        <div class="img-upload-area" id="edit-upload-area" style="min-height:90px">
+          <input type="file" id="edit-image" name="image" accept="image/jpeg,image/png,image/webp,image/gif"
+                 style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%">
+          <div id="edit-upload-placeholder">
+            <span class="upload-icon" style="font-size:1.5rem">📷</span>
+            <span style="font-size:.8rem">Replace with a new photo</span>
+          </div>
+          <img id="edit-image-preview" src="" alt="" style="display:none;width:100%;height:90px;object-fit:cover">
+          <button type="button" id="edit-remove-new-img" class="remove-img-btn" style="display:none" title="Remove new image">✕</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="edit-ingredients">Ingredients</label>
+        <textarea id="edit-ingredients" rows="3" placeholder="e.g. eggs, guanciale, pecorino…"></textarea>
+      </div>
+      <div class="form-row">
+        <label for="edit-description">Description</label>
+        <textarea id="edit-description" rows="3"></textarea>
+      </div>
+      <div class="form-row" style="max-width:160px">
+        <label for="edit-prep-time">Prep time (minutes)</label>
+        <input type="number" id="edit-prep-time" min="1" max="9999" placeholder="30">
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="edit-submit-btn">Save changes</button>
+        <button type="button" class="btn btn-outline" id="edit-cancel-btn">Cancel</button>
+        <span id="edit-error" style="color:var(--terracotta);font-size:.85rem;margin-left:auto"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Dish image">
+  <button class="lightbox-close" id="lightbox-close" aria-label="Close">✕</button>
+  <img id="lightbox-img" src="" alt="">
+</div>
+
 <script src="/static/js/utils.js"></script>
 <script>
   let allDishes = [];
   let activeCategory = "";
+  let activeSort = "date-desc";
 
+  // ── Sorting ────────────────────────────────────────────────────────────────
+  function sortDishes(dishes) {
+    const sorted = [...dishes];
+    switch (activeSort) {
+      case "name-asc":  return sorted.sort((a, b) => a.name.localeCompare(b.name));
+      case "name-desc": return sorted.sort((a, b) => b.name.localeCompare(a.name));
+      case "date-asc":  return sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      case "date-desc": return sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      case "prep-asc":  return sorted.sort((a, b) => (a.prep_time ?? 9999) - (b.prep_time ?? 9999));
+      default: return sorted;
+    }
+  }
+
+  function getFiltered() {
+    const base = activeCategory ? allDishes.filter(d => d.category === activeCategory) : allDishes;
+    return sortDishes(base);
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   function renderDishes(dishes) {
     const grid = document.getElementById("dishes-grid");
     if (!dishes.length) {
@@ -49,22 +164,32 @@
         </div>`;
       return;
     }
+
     grid.innerHTML = dishes.map((d, i) => `
-      <article class="dish-card" style="animation-delay:${i * 0.04}s">
+      <article class="dish-card" style="animation-delay:${i * 0.04}s" onclick="openDishDetails(${d.id})">
+        ${d.image_path
+          ? `<div class="dish-card-img" onclick="event.stopPropagation(); openLightbox('${esc(d.image_path)}','${esc(d.name)}')">
+               <img src="${esc(d.image_path)}" alt="${esc(d.name)}" loading="lazy">
+               <span class="img-zoom-hint">🔍</span>
+             </div>`
+          : `<div class="dish-card-img dish-card-img--empty"><span>🍽</span></div>`
+        }
         <div class="dish-card-header">
           <h3>${esc(d.name)}</h3>
           <span class="category-badge">${esc(d.category)}</span>
         </div>
         <div class="dish-card-body">
           ${d.description ? `<p>${esc(d.description)}</p>` : ""}
-          ${d.ingredients  ? `<p style="color:var(--ink3);font-size:.8rem">📋 ${esc(d.ingredients)}</p>` : ""}
+          ${d.ingredients ? `<p style="color:var(--ink3);font-size:.8rem">📋 ${esc(d.ingredients)}</p>` : ""}
           <div class="dish-meta">
             ${d.prep_time ? `<span>⏱ ${d.prep_time} min</span>` : ""}
             <span>Added ${formatDate(d.created_at)}</span>
           </div>
         </div>
-        <div class="dish-card-footer">
-          <button class="btn btn-danger" onclick="deleteDish(${d.id}, this)">Delete</button>
+        <div class="dish-card-footer" onclick="event.stopPropagation()">
+          <button class="btn btn-outline" onclick="addToQueue(${d.id})">Queue</button>
+          <button class="btn btn-edit"    onclick="openEditModal(${d.id})">Edit</button>
+          <button class="btn btn-danger"  onclick="deleteDish(${d.id})">Delete</button>
         </div>
       </article>`).join("");
   }
@@ -80,8 +205,7 @@
       bar.querySelectorAll(".filter-pill").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       activeCategory = btn.dataset.cat;
-      const filtered = activeCategory ? allDishes.filter(d => d.category === activeCategory) : allDishes;
-      renderDishes(filtered);
+      renderDishes(getFiltered());
     });
   }
 
@@ -91,32 +215,253 @@
       document.getElementById("dish-count").textContent =
         `${allDishes.length} dish${allDishes.length !== 1 ? "es" : ""} in the library`;
       buildFilters(allDishes);
-      renderDishes(allDishes);
+      renderDishes(getFiltered());
     } catch (e) {
       document.getElementById("dish-count").textContent = "Could not load dishes — is the API running?";
     }
   }
 
-  async function deleteDish(id, btn) {
+  document.getElementById("sort-select").addEventListener("change", e => {
+    activeSort = e.target.value;
+    renderDishes(getFiltered());
+  });
+
+  // ── Dish detail modal ─────────────────────────────────────────────────────
+  async function openDishDetails(id) {
+    try {
+      const dish = await apiFetch(`/dishes/${id}`);
+      const content = document.getElementById("dish-modal-content");
+      content.innerHTML = `
+        ${dish.image_path ? `<img class="dish-modal-img" src="${esc(dish.image_path)}" alt="${esc(dish.name)}">` : ""}
+        <div class="dish-modal-header">
+          <div>
+            <h2>${esc(dish.name)}</h2>
+            <span class="category-badge">${esc(dish.category)}</span>
+          </div>
+          <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+            <button class="btn btn-outline" onclick="openEditModal(${dish.id}); closeDishDetails()">Edit</button>
+            <button class="btn btn-primary" onclick="addToQueue(${dish.id})">Add to queue</button>
+          </div>
+        </div>
+        <div class="dish-detail-section">
+          <h4>Description</h4>
+          <p>${dish.description ? esc(dish.description) : "No description yet."}</p>
+        </div>
+        <div class="dish-detail-section">
+          <h4>Ingredients</h4>
+          <p>${dish.ingredients ? esc(dish.ingredients) : "No ingredients listed."}</p>
+        </div>
+        <div class="dish-detail-grid">
+          ${dish.prep_time ? `<div><strong>Prep time</strong><span>${dish.prep_time} min</span></div>` : ""}
+          <div><strong>Added</strong><span>${formatDate(dish.created_at)}</span></div>
+        </div>
+      `;
+      document.getElementById("dish-modal").classList.add("open");
+      document.body.style.overflow = "hidden";
+    } catch (e) {
+      showToast("Could not load dish details.", "error");
+    }
+  }
+
+  function closeDishDetails() {
+    document.getElementById("dish-modal").classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  // ── Edit modal ────────────────────────────────────────────────────────────
+  const editFileInput    = document.getElementById("edit-image");
+  const editPreview      = document.getElementById("edit-image-preview");
+  const editPlaceholder  = document.getElementById("edit-upload-placeholder");
+  const editRemoveNew    = document.getElementById("edit-remove-new-img");
+  const editCurrentWrap  = document.getElementById("edit-current-img-wrap");
+  const editCurrentImg   = document.getElementById("edit-current-img");
+  const editRemoveCurrent = document.getElementById("edit-remove-current-img");
+  const editRemoveFlag   = document.getElementById("edit-remove-image-flag");
+  const editUploadArea   = document.getElementById("edit-upload-area");
+
+  editFileInput.addEventListener("change", () => {
+    const file = editFileInput.files[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      showToast("Image too large (max 8 MB).", "error");
+      editFileInput.value = "";
+      return;
+    }
+    editPreview.src = URL.createObjectURL(file);
+    editPreview.style.display = "block";
+    editPlaceholder.style.display = "none";
+    editRemoveNew.style.display = "flex";
+    // Hide current image row since we're replacing it
+    editCurrentWrap.style.display = "none";
+  });
+
+  editRemoveNew.addEventListener("click", e => {
+    e.stopPropagation();
+    editFileInput.value = "";
+    editPreview.src = "";
+    editPreview.style.display = "none";
+    editPlaceholder.style.display = "flex";
+    editRemoveNew.style.display = "none";
+    // Restore current image row if it was there
+    if (editCurrentImg.dataset.src) {
+      editCurrentImg.src = editCurrentImg.dataset.src;
+      editCurrentWrap.style.display = "block";
+      editRemoveFlag.value = "0";
+    }
+  });
+
+  editRemoveCurrent.addEventListener("click", e => {
+    e.stopPropagation();
+    editRemoveFlag.value = "1";
+    editCurrentWrap.style.display = "none";
+  });
+
+  editUploadArea.addEventListener("dragover",  ev => { ev.preventDefault(); editUploadArea.classList.add("drag-over"); });
+  editUploadArea.addEventListener("dragleave", ()  => editUploadArea.classList.remove("drag-over"));
+  editUploadArea.addEventListener("drop",      ev  => { ev.preventDefault(); editUploadArea.classList.remove("drag-over"); });
+
+  async function openEditModal(id) {
+    try {
+      const dish = await apiFetch(`/dishes/${id}`);
+
+      document.getElementById("edit-id").value          = dish.id;
+      document.getElementById("edit-name").value        = dish.name;
+      document.getElementById("edit-category").value    = dish.category;
+      document.getElementById("edit-ingredients").value = dish.ingredients || "";
+      document.getElementById("edit-description").value = dish.description || "";
+      document.getElementById("edit-prep-time").value   = dish.prep_time   || "";
+      document.getElementById("edit-error").textContent = "";
+
+      // Reset new-image upload UI
+      editFileInput.value = "";
+      editPreview.src = "";
+      editPreview.style.display = "none";
+      editPlaceholder.style.display = "flex";
+      editRemoveNew.style.display = "none";
+      editRemoveFlag.value = "0";
+
+      // Show or hide current image
+      if (dish.image_path) {
+        editCurrentImg.src = dish.image_path;
+        editCurrentImg.dataset.src = dish.image_path;
+        editCurrentWrap.style.display = "block";
+      } else {
+        editCurrentWrap.style.display = "none";
+        editCurrentImg.dataset.src = "";
+      }
+
+      document.getElementById("edit-modal").classList.add("open");
+      document.body.style.overflow = "hidden";
+    } catch (e) {
+      showToast("Could not load dish for editing.", "error");
+    }
+  }
+
+  function closeEditModal() {
+    document.getElementById("edit-modal").classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  document.getElementById("edit-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const btn = document.getElementById("edit-submit-btn");
+    const errEl = document.getElementById("edit-error");
+    errEl.textContent = "";
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+
+    const id = document.getElementById("edit-id").value;
+    const fd = new FormData();
+    fd.append("name",         document.getElementById("edit-name").value.trim());
+    fd.append("category",     document.getElementById("edit-category").value);
+    fd.append("ingredients",  document.getElementById("edit-ingredients").value.trim());
+    fd.append("description",  document.getElementById("edit-description").value.trim());
+    const pt = document.getElementById("edit-prep-time").value;
+    if (pt) fd.append("prep_time", pt);
+    fd.append("remove_image", editRemoveFlag.value);
+    if (editFileInput.files[0]) fd.append("image", editFileInput.files[0]);
+
+    try {
+      const updated = await fetch(`/api/dishes/${id}`, { method: "PUT", body: fd });
+      if (!updated.ok) {
+        const err = await updated.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${updated.status}`);
+      }
+      const dish = await updated.json();
+      // Patch local data
+      const idx = allDishes.findIndex(d => d.id === dish.id);
+      if (idx !== -1) allDishes[idx] = dish;
+      buildFilters(allDishes);
+      renderDishes(getFiltered());
+      closeEditModal();
+      showToast("Dish updated.");
+    } catch (err) {
+      errEl.textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = "Save changes";
+    }
+  });
+
+  document.getElementById("edit-modal-close").addEventListener("click", closeEditModal);
+  document.getElementById("edit-cancel-btn").addEventListener("click", closeEditModal);
+  document.getElementById("edit-modal").addEventListener("click", e => {
+    if (e.target === e.currentTarget) closeEditModal();
+  });
+
+  // ── Queue helpers ─────────────────────────────────────────────────────────
+  function getQueueIds() { return JSON.parse(localStorage.getItem("dishQueue") || "[]"); }
+  function saveQueueIds(ids) { localStorage.setItem("dishQueue", JSON.stringify(ids)); }
+
+  function addToQueue(id) {
+    const ids = getQueueIds();
+    if (ids.includes(id)) { showToast("Dish is already in the queue."); return; }
+    ids.push(id);
+    saveQueueIds(ids);
+    showToast("Added to queue.");
+  }
+
+  async function deleteDish(id) {
     if (!confirm("Remove this dish?")) return;
     try {
       await apiFetch(`/dishes/${id}`, { method: "DELETE" });
       allDishes = allDishes.filter(d => d.id !== id);
-      const filtered = activeCategory ? allDishes.filter(d => d.category === activeCategory) : allDishes;
+      saveQueueIds(getQueueIds().filter(qid => qid !== id));
       document.getElementById("dish-count").textContent =
         `${allDishes.length} dish${allDishes.length !== 1 ? "es" : ""} in the library`;
       buildFilters(allDishes);
-      renderDishes(filtered);
+      renderDishes(getFiltered());
       showToast("Dish removed.");
     } catch (e) {
       showToast("Failed to delete dish.", "error");
     }
   }
 
+  // ── Lightbox ──────────────────────────────────────────────────────────────
+  function openLightbox(src, alt) {
+    document.getElementById("lightbox-img").src = src;
+    document.getElementById("lightbox-img").alt = alt;
+    document.getElementById("lightbox").classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeLightbox() {
+    document.getElementById("lightbox").classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  // ── Event listeners ───────────────────────────────────────────────────────
+  document.getElementById("dish-modal-close").addEventListener("click", closeDishDetails);
+  document.getElementById("dish-modal").addEventListener("click", e => { if (e.target === e.currentTarget) closeDishDetails(); });
+  document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+  document.getElementById("lightbox").addEventListener("click", e => { if (e.target === e.currentTarget) closeLightbox(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeDishDetails(); closeLightbox(); closeEditModal(); }
+  });
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
   function esc(s) {
     return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
-
   function formatDate(iso) {
     if (!iso) return "";
     return new Date(iso).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" });
@@ -126,3 +471,4 @@
 </script>
 </body>
 </html>
+
