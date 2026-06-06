@@ -27,6 +27,13 @@
   </div>
   
 
+  <!-- Search -->
+  <div class="search-bar">
+    <span class="search-icon">🔍</span>
+    <input type="search" id="search-input" class="search-input" placeholder="Search dishes, ingredients, category…" autocomplete="off">
+    <button class="search-clear" id="search-clear" aria-label="Clear search" style="display:none">✕</button>
+  </div>
+
   <!-- Filter + Sort controls -->
   <div class="controls-row">
     <div class="filter-bar" id="filter-bar">
@@ -132,6 +139,27 @@
   let allDishes = [];
   let activeCategory = "";
   let activeSort = "date-desc";
+  let searchQuery = "";
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  const searchInput = document.getElementById("search-input");
+  const searchClear = document.getElementById("search-clear");
+
+  searchInput.addEventListener("input", () => {
+    searchQuery = searchInput.value.trim().toLowerCase();
+    searchClear.style.display = searchQuery ? "flex" : "none";
+    updateCount();
+    renderDishes(getFiltered());
+  });
+
+  searchClear.addEventListener("click", () => {
+    searchInput.value = "";
+    searchQuery = "";
+    searchClear.style.display = "none";
+    searchInput.focus();
+    updateCount();
+    renderDishes(getFiltered());
+  });
 
   // ── Sorting ────────────────────────────────────────────────────────────────
   function sortDishes(dishes) {
@@ -147,7 +175,15 @@
   }
 
   function getFiltered() {
-    const base = activeCategory ? allDishes.filter(d => d.category === activeCategory) : allDishes;
+    let base = activeCategory ? allDishes.filter(d => d.category === activeCategory) : allDishes;
+    if (searchQuery) {
+      base = base.filter(d =>
+        d.name.toLowerCase().includes(searchQuery) ||
+        (d.category   || "").toLowerCase().includes(searchQuery) ||
+        (d.ingredients|| "").toLowerCase().includes(searchQuery) ||
+        (d.description|| "").toLowerCase().includes(searchQuery)
+      );
+    }
     return sortDishes(base);
   }
 
@@ -155,13 +191,23 @@
   function renderDishes(dishes) {
     const grid = document.getElementById("dishes-grid");
     if (!dishes.length) {
-      grid.innerHTML = `
-        <div class="empty-state" style="grid-column:1/-1">
-          <div class="big">🍽</div>
-          <h3>Nothing here yet</h3>
-          <p>Start by adding your first dish to the library.</p>
-          <a class="btn btn-primary" href="/add-dish.html">Add a dish</a>
-        </div>`;
+      if (searchQuery || activeCategory) {
+        grid.innerHTML = `
+          <div class="empty-state" style="grid-column:1/-1">
+            <div class="big">🔍</div>
+            <h3>No matches</h3>
+            <p>Try a different search term or category.</p>
+            <button class="btn btn-outline" onclick="clearSearch()">Clear filters</button>
+          </div>`;
+      } else {
+        grid.innerHTML = `
+          <div class="empty-state" style="grid-column:1/-1">
+            <div class="big">🍽</div>
+            <h3>Nothing here yet</h3>
+            <p>Start by adding your first dish to the library.</p>
+            <a class="btn btn-primary" href="/add-dish.html">Add a dish</a>
+          </div>`;
+      }
       return;
     }
 
@@ -205,16 +251,34 @@
       bar.querySelectorAll(".filter-pill").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       activeCategory = btn.dataset.cat;
+      updateCount();
       renderDishes(getFiltered());
     });
+  }
+
+  function clearSearch() {
+    searchInput.value = "";
+    searchQuery = "";
+    searchClear.style.display = "none";
+    activeCategory = "";
+    document.querySelectorAll(".filter-pill").forEach((b, i) => b.classList.toggle("active", i === 0));
+    updateCount();
+    renderDishes(getFiltered());
+  }
+
+  function updateCount() {
+    const shown = getFiltered().length;
+    const total = allDishes.length;
+    document.getElementById("dish-count").textContent = searchQuery || activeCategory
+      ? `${shown} of ${total} dish${total !== 1 ? "es" : ""}`
+      : `${total} dish${total !== 1 ? "es" : ""} in the library`;
   }
 
   async function load() {
     try {
       allDishes = await apiFetch("/dishes");
-      document.getElementById("dish-count").textContent =
-        `${allDishes.length} dish${allDishes.length !== 1 ? "es" : ""} in the library`;
       buildFilters(allDishes);
+      updateCount();
       renderDishes(getFiltered());
     } catch (e) {
       document.getElementById("dish-count").textContent = "Could not load dishes — is the API running?";
@@ -223,6 +287,7 @@
 
   document.getElementById("sort-select").addEventListener("change", e => {
     activeSort = e.target.value;
+    updateCount();
     renderDishes(getFiltered());
   });
 
@@ -392,6 +457,7 @@
       const idx = allDishes.findIndex(d => d.id === dish.id);
       if (idx !== -1) allDishes[idx] = dish;
       buildFilters(allDishes);
+      updateCount();
       renderDishes(getFiltered());
       closeEditModal();
       showToast("Dish updated.");
@@ -426,9 +492,8 @@
       await apiFetch(`/dishes/${id}`, { method: "DELETE" });
       allDishes = allDishes.filter(d => d.id !== id);
       saveQueueIds(getQueueIds().filter(qid => qid !== id));
-      document.getElementById("dish-count").textContent =
-        `${allDishes.length} dish${allDishes.length !== 1 ? "es" : ""} in the library`;
       buildFilters(allDishes);
+      updateCount();
       renderDishes(getFiltered());
       showToast("Dish removed.");
     } catch (e) {
